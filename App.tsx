@@ -431,9 +431,9 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
                     </div>
                 </div>
             </header>
-            <main className="container mx-auto p-4 md:p-8 flex-grow">
+            <main className="container mx-auto p-4 md:p-8 flex-grow flex flex-col">
                 {selectedWireframe ? (
-                    <div className="flex flex-col h-full">
+                    <div className="flex flex-col flex-grow min-h-0">
                         <div className="mb-6 flex items-center justify-between">
                              <div>
                                 <h2 className="text-xl font-bold text-white">Viewing Wireframe</h2>
