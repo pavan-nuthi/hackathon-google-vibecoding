@@ -4,7 +4,7 @@
 
 # Run and deploy your AI Studio app
 
-This contains everything you need to run your app locally.
+Instantly generate functional React/Tailwind prototypes from your UI sketches. Snap a photo of your drawing, and watch as AI converts it into clean, ready-to-use frontend code.
 
 View your app in AI Studio: https://ai.studio/apps/temp/1
 
