@@ -28,6 +28,11 @@ const MobileIcon = () => (
 );
 const UserIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>;
 const LockIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>;
+const TrashIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
 
 
 // Creates a complete, self-contained HTML file string that listens for code.
@@ -177,7 +182,12 @@ const SignupPage = ({ onSignup, onSwitchToLogin }) => {
 
 
 // --- Result Viewer Component (reusable for wizard and profile) ---
-const ResultViewer = ({ generatedTsx, initialTab = 'preview' }) => {
+// FIX: Add interface for component props to resolve type error. The initialTab prop was being inferred as 'string' instead of the more specific '"preview" | "code"', causing a type mismatch when initializing the component's state.
+interface ResultViewerProps {
+  generatedTsx: string;
+  initialTab?: 'preview' | 'code';
+}
+const ResultViewer = ({ generatedTsx, initialTab = 'preview' }: ResultViewerProps) => {
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>(initialTab);
   const [selectedDevice, setSelectedDevice] = useState<Device>('desktop');
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -376,11 +386,30 @@ const WizardApp = ({ user, onLogout, onSwitchToProfile }) => {
 const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
     const [wireframes, setWireframes] = useState([]);
     const [selectedWireframe, setSelectedWireframe] = useState(null);
+    const [wireframeToDelete, setWireframeToDelete] = useState(null);
 
     useEffect(() => {
         const history = JSON.parse(localStorage.getItem('wireframe-wizard-history') || '{}');
         setWireframes(history[user.email] || []);
     }, [user.email]);
+    
+    const handleDelete = (e, wireframeId) => {
+        e.stopPropagation(); // Prevent card click event from firing
+        setWireframeToDelete(wireframeId);
+    };
+    
+    const confirmDelete = () => {
+        if (!wireframeToDelete) return;
+        
+        const history = JSON.parse(localStorage.getItem('wireframe-wizard-history') || '{}');
+        const userHistory = history[user.email] || [];
+        const updatedHistory = userHistory.filter(w => w.id !== wireframeToDelete);
+        history[user.email] = updatedHistory;
+        localStorage.setItem('wireframe-wizard-history', JSON.stringify(history));
+        
+        setWireframes(updatedHistory);
+        setWireframeToDelete(null); // Close modal
+    };
 
     return (
         <>
@@ -422,6 +451,11 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
                             <div key={wireframe.id} onClick={() => setSelectedWireframe(wireframe)} className="group relative aspect-square bg-gray-900 border border-gray-800 rounded-lg overflow-hidden cursor-pointer transition-all duration-300 hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-500/20 hover:-translate-y-1">
                                 <img src={wireframe.sketchUrl} alt="Wireframe sketch" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+                                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                    <button onClick={(e) => handleDelete(e, wireframe.id)} className="p-2 bg-red-600/80 hover:bg-red-500 rounded-full text-white shadow-lg transition-colors" aria-label="Delete wireframe">
+                                        <TrashIcon />
+                                    </button>
+                                </div>
                                 <div className="absolute bottom-0 left-0 p-4">
                                     <p className="text-sm font-medium text-white">Created:</p>
                                     <p className="text-xs text-gray-400">{new Date(wireframe.createdAt).toLocaleDateString()}</p>
@@ -433,12 +467,32 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
                     <div className="text-center my-auto">
                         <h2 className="text-2xl font-semibold text-gray-300">No Wireframes Yet</h2>
                         <p className="text-gray-500 mt-2">Start by creating your first wireframe with the wizard!</p>
+
                         <button onClick={onSwitchToApp} className="mt-6 px-6 py-3 font-semibold rounded-md text-white bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 transition-all duration-300">
                             Go to Wizard
                         </button>
                     </div>
                 )}
             </main>
+            
+            {/* Delete Confirmation Modal */}
+            {wireframeToDelete && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in-fast">
+                    <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl p-8 max-w-md w-full m-4">
+                        <h3 className="text-xl font-bold text-white mb-4">Confirm Deletion</h3>
+                        <p className="text-gray-400 mb-8">Are you sure you want to permanently delete this wireframe? This action cannot be undone.</p>
+                        <div className="flex justify-end space-x-4">
+                            <button onClick={() => setWireframeToDelete(null)} className="px-5 py-2.5 text-sm font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                                Cancel
+                            </button>
+                            <button onClick={confirmDelete} className="px-5 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            <style>{`.animate-fade-in-fast { animation: fadeIn 0.2s ease-out; } @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
         </>
     );
 };
