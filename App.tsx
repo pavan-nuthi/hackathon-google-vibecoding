@@ -56,6 +56,7 @@ const createPreviewHtml = (): string => `
       window.addEventListener('message', (event) => {
         if (event.data.type === 'code') {
           try {
+            document.getElementById('root').innerHTML = ''; // Clear previous content
             const transformedCode = Babel.transform(event.data.code, { 
               presets: ['react', 'typescript'], 
               filename: 'component.tsx' // This is required for the TSX preset
@@ -175,16 +176,10 @@ const SignupPage = ({ onSignup, onSwitchToLogin }) => {
 };
 
 
-// --- Main Wizard Application ---
-const WizardApp = ({ user, onLogout }) => {
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [generatedTsx, setGeneratedTsx] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview');
+// --- Result Viewer Component (reusable for wizard and profile) ---
+const ResultViewer = ({ generatedTsx, initialTab = 'preview' }) => {
+  const [activeTab, setActiveTab] = useState<'preview' | 'code'>(initialTab);
   const [selectedDevice, setSelectedDevice] = useState<Device>('desktop');
-  
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isIframeReady, setIsIframeReady] = useState(false);
 
@@ -204,6 +199,52 @@ const WizardApp = ({ user, onLogout }) => {
     }
   }, [isIframeReady, generatedTsx]);
 
+   return (
+      <div className="flex flex-col flex-grow animate-fade-in min-h-0">
+        <div className="flex border-b border-gray-800">
+          {/* FIX: Use 'as const' to ensure 'tab' is inferred as 'preview' | 'code', not string. */}
+          {(['preview', 'code'] as const).map((tab) => (
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`py-3 px-5 text-sm font-medium transition-colors ${activeTab === tab ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-gray-400 hover:text-white'}`}>
+                  {tab === 'preview' ? 'Live Preview' : 'Code'}
+              </button>
+          ))}
+        </div>
+        <div className="bg-gray-900 rounded-b-lg border border-t-0 border-gray-800 flex-1 flex flex-col min-h-0 shadow-lg">
+          {activeTab === 'preview' ? (
+             <div className="flex flex-col flex-grow p-4 min-h-0">
+              <div className="flex justify-center items-center mb-4 p-1.5 bg-gray-800 rounded-lg space-x-1">
+                {(Object.keys(devices) as Device[]).map(device => (
+                  <button key={device} onClick={() => setSelectedDevice(device)} className={`p-2 rounded-md transition-colors ${selectedDevice === device ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-700'}`} title={devices[device].label}>
+                    {device === 'desktop' && <DesktopIcon />}
+                    {device === 'tablet' && <TabletIcon />}
+                    {device === 'mobile' && <MobileIcon />}
+                  </button>
+                ))}
+              </div>
+              <div className={`flex-grow grid overflow-auto bg-dots ${selectedDevice !== 'desktop' ? 'place-items-center' : ''}`}>
+                <div className={`shadow-2xl transition-all duration-300 ease-in-out ${selectedDevice !== 'desktop' ? 'rounded-xl' : 'w-full h-full'}`} style={selectedDevice !== 'desktop' ? { width: devices[selectedDevice].width, height: devices[selectedDevice].height, maxWidth: '100%', maxHeight: '100%' } : {}}>
+                  <iframe ref={iframeRef} srcDoc={createPreviewHtml()} title="Live Preview" sandbox="allow-scripts allow-same-origin" className="w-full h-full bg-white" style={{ borderRadius: selectedDevice !== 'desktop' ? '1rem' : '0' }}/>
+                </div>
+              </div>
+              <style>{`.bg-dots { background-image: radial-gradient(#2d3748 1px, transparent 0); background-size: 20px 20px; }`}</style>
+            </div>
+          ) : (
+            <CodeBlock title="Generated Component (.tsx)" language="tsx" code={generatedTsx!} />
+          )}
+        </div>
+      </div>
+   )
+}
+
+
+// --- Main Wizard Application ---
+const WizardApp = ({ user, onLogout, onSwitchToProfile }) => {
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [generatedTsx, setGeneratedTsx] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -216,29 +257,46 @@ const WizardApp = ({ user, onLogout }) => {
     }
   };
 
+  const saveWireframeToHistory = (wireframe) => {
+    const history = JSON.parse(localStorage.getItem('wireframe-wizard-history') || '{}');
+    if (!history[user.email]) {
+        history[user.email] = [];
+    }
+    history[user.email].unshift(wireframe); // Add to the beginning of the list
+    localStorage.setItem('wireframe-wizard-history', JSON.stringify(history));
+  };
+
+
   const handleGenerateCode = useCallback(async () => {
-    if (!imageFile) {
+    if (!imageFile || !imageUrl) {
       setError("Please upload an image first.");
       return;
     }
     setIsLoading(true);
     setError(null);
     setGeneratedTsx(null);
-    setIsIframeReady(false); // Reset iframe readiness for new content
-    setActiveTab('preview');
-    setSelectedDevice('desktop');
 
     try {
       const { base64, mimeType } = await fileToBase64(imageFile);
       const { tsx } = await generateCodeFromImage(base64, mimeType);
       setGeneratedTsx(tsx);
+      
+      // Save to history on success
+      const newWireframe = {
+        id: new Date().toISOString(),
+        sketchUrl: imageUrl,
+        generatedTsx: tsx,
+        createdAt: new Date().toISOString(),
+      };
+      saveWireframeToHistory(newWireframe);
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       setError(`Failed to generate code: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
-  }, [imageFile]);
+  }, [imageFile, imageUrl, user.email]);
   
   const resetState = () => {
     setImageFile(null);
@@ -246,7 +304,6 @@ const WizardApp = ({ user, onLogout }) => {
     setGeneratedTsx(null);
     setIsLoading(false);
     setError(null);
-    setIsIframeReady(false);
   }
   
   return (
@@ -264,6 +321,9 @@ const WizardApp = ({ user, onLogout }) => {
             )}
             <div className="hidden md:flex items-center space-x-4 pl-4 border-l border-gray-700">
                 <span className="text-sm text-gray-400 truncate max-w-[150px]">{user.email}</span>
+                 <button onClick={onSwitchToProfile} className="px-4 py-2 border border-gray-700 text-sm font-medium rounded-md text-gray-300 hover:bg-gray-800 hover:border-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-950 focus:ring-indigo-500">
+                    My Profile
+                 </button>
                  <button onClick={onLogout} className="px-4 py-2 border border-gray-700 text-sm font-medium rounded-md text-gray-300 hover:bg-gray-800 hover:border-gray-600 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-950 focus:ring-indigo-500">
                     Logout
                  </button>
@@ -276,38 +336,7 @@ const WizardApp = ({ user, onLogout }) => {
         {isLoading ? (
           <Loader />
         ) : generatedTsx ? (
-          <div className="flex flex-col flex-grow animate-fade-in min-h-0">
-            <div className="flex border-b border-gray-800">
-              {['preview', 'code'].map((tab) => (
-                  <button key={tab} onClick={() => setActiveTab(tab as 'preview' | 'code')} className={`py-3 px-5 text-sm font-medium transition-colors ${activeTab === tab ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-gray-400 hover:text-white'}`}>
-                      {tab === 'preview' ? 'Live Preview' : 'Code'}
-                  </button>
-              ))}
-            </div>
-            <div className="bg-gray-900 rounded-b-lg border border-t-0 border-gray-800 flex-1 flex flex-col min-h-0 shadow-lg">
-              {activeTab === 'preview' ? (
-                 <div className="flex flex-col flex-grow p-4 min-h-0">
-                  <div className="flex justify-center items-center mb-4 p-1.5 bg-gray-800 rounded-lg space-x-1">
-                    {(Object.keys(devices) as Device[]).map(device => (
-                      <button key={device} onClick={() => setSelectedDevice(device)} className={`p-2 rounded-md transition-colors ${selectedDevice === device ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-700'}`} title={devices[device].label}>
-                        {device === 'desktop' && <DesktopIcon />}
-                        {device === 'tablet' && <TabletIcon />}
-                        {device === 'mobile' && <MobileIcon />}
-                      </button>
-                    ))}
-                  </div>
-                  <div className={`flex-grow grid overflow-auto bg-dots ${selectedDevice !== 'desktop' ? 'place-items-center' : ''}`}>
-                    <div className={`shadow-2xl transition-all duration-300 ease-in-out ${selectedDevice !== 'desktop' ? 'rounded-xl' : 'w-full h-full'}`} style={selectedDevice !== 'desktop' ? { width: devices[selectedDevice].width, height: devices[selectedDevice].height, maxWidth: '100%', maxHeight: '100%' } : {}}>
-                      <iframe ref={iframeRef} srcDoc={createPreviewHtml()} title="Live Preview" sandbox="allow-scripts allow-same-origin" className="w-full h-full bg-white" style={{ borderRadius: selectedDevice !== 'desktop' ? '1rem' : '0' }}/>
-                    </div>
-                  </div>
-                  <style>{`.bg-dots { background-image: radial-gradient(#2d3748 1px, transparent 0); background-size: 20px 20px; }`}</style>
-                </div>
-              ) : (
-                <CodeBlock title="Generated Component (.tsx)" language="tsx" code={generatedTsx!} />
-              )}
-            </div>
-          </div>
+          <ResultViewer generatedTsx={generatedTsx} />
         ) : (
           <div className="max-w-2xl mx-auto text-center animate-fade-in my-auto">
             <div className="group relative">
@@ -343,10 +372,82 @@ const WizardApp = ({ user, onLogout }) => {
   );
 }
 
+// --- My Profile Page ---
+const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
+    const [wireframes, setWireframes] = useState([]);
+    const [selectedWireframe, setSelectedWireframe] = useState(null);
+
+    useEffect(() => {
+        const history = JSON.parse(localStorage.getItem('wireframe-wizard-history') || '{}');
+        setWireframes(history[user.email] || []);
+    }, [user.email]);
+
+    return (
+        <>
+            <header className="py-5 px-4 md:px-8 border-b border-gray-800/50 sticky top-0 bg-gray-950/80 backdrop-blur-sm z-20">
+                <div className="container mx-auto flex justify-between items-center">
+                    <h1 className="text-2xl md:text-3xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-500">
+                        My Profile
+                    </h1>
+                    <div className="flex items-center space-x-4">
+                        <button onClick={onSwitchToApp} className="px-4 py-2 border border-gray-700 text-sm font-medium rounded-md text-gray-300 hover:bg-gray-800 hover:border-gray-600 transition-colors">
+                            Back to Wizard
+                        </button>
+                        <div className="hidden md:flex items-center space-x-4 pl-4 border-l border-gray-700">
+                            <span className="text-sm text-gray-400 truncate max-w-[150px]">{user.email}</span>
+                            <button onClick={onLogout} className="px-4 py-2 border border-gray-700 text-sm font-medium rounded-md text-gray-300 hover:bg-gray-800 hover:border-gray-600 transition-colors">
+                                Logout
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            <main className="container mx-auto p-4 md:p-8 flex-grow">
+                {selectedWireframe ? (
+                    <div className="flex flex-col h-full">
+                        <div className="mb-6 flex items-center justify-between">
+                             <div>
+                                <h2 className="text-xl font-bold text-white">Viewing Wireframe</h2>
+                                <p className="text-sm text-gray-400">Created on {new Date(selectedWireframe.createdAt).toLocaleString()}</p>
+                            </div>
+                            <button onClick={() => setSelectedWireframe(null)} className="px-4 py-2 bg-gray-800 text-sm font-medium rounded-md text-gray-300 hover:bg-gray-700 transition-colors">
+                                &larr; Back to Gallery
+                            </button>
+                        </div>
+                        <ResultViewer generatedTsx={selectedWireframe.generatedTsx} />
+                    </div>
+                ) : wireframes.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        {wireframes.map((wireframe) => (
+                            <div key={wireframe.id} onClick={() => setSelectedWireframe(wireframe)} className="group relative aspect-square bg-gray-900 border border-gray-800 rounded-lg overflow-hidden cursor-pointer transition-all duration-300 hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-500/20 hover:-translate-y-1">
+                                <img src={wireframe.sketchUrl} alt="Wireframe sketch" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+                                <div className="absolute bottom-0 left-0 p-4">
+                                    <p className="text-sm font-medium text-white">Created:</p>
+                                    <p className="text-xs text-gray-400">{new Date(wireframe.createdAt).toLocaleDateString()}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-center my-auto">
+                        <h2 className="text-2xl font-semibold text-gray-300">No Wireframes Yet</h2>
+                        <p className="text-gray-500 mt-2">Start by creating your first wireframe with the wizard!</p>
+                        <button onClick={onSwitchToApp} className="mt-6 px-6 py-3 font-semibold rounded-md text-white bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 transition-all duration-300">
+                            Go to Wizard
+                        </button>
+                    </div>
+                )}
+            </main>
+        </>
+    );
+};
+
+
 // --- App Shell / Router ---
 export default function App() {
     const [user, setUser] = useState(null);
-    const [view, setView] = useState('login'); // 'login', 'signup', 'app'
+    const [view, setView] = useState('login'); // 'login', 'signup', 'app', 'profile'
 
     useEffect(() => {
         const loggedInUser = localStorage.getItem('wireframe-wizard-user');
@@ -401,14 +502,22 @@ export default function App() {
     };
     
     const renderView = () => {
+        if (!user) {
+             switch (view) {
+                case 'signup':
+                    return <SignupPage onSignup={handleSignup} onSwitchToLogin={() => setView('login')} />;
+                case 'login':
+                default:
+                    return <LoginPage onLogin={handleLogin} onSwitchToSignup={() => setView('signup')} />;
+            }
+        }
+
         switch (view) {
-            case 'signup':
-                return <SignupPage onSignup={handleSignup} onSwitchToLogin={() => setView('login')} />;
+            case 'profile':
+                 return <ProfilePage user={user} onLogout={handleLogout} onSwitchToApp={() => setView('app')} />;
             case 'app':
-                return user ? <WizardApp user={user} onLogout={handleLogout} /> : <LoginPage onLogin={handleLogin} onSwitchToSignup={() => setView('signup')} />;
-            case 'login':
             default:
-                return <LoginPage onLogin={handleLogin} onSwitchToSignup={() => setView('signup')} />;
+                return <WizardApp user={user} onLogout={handleLogout} onSwitchToProfile={() => setView('profile')} />;
         }
     };
 
