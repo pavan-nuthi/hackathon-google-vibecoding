@@ -1,4 +1,5 @@
 {
   "name": "Wireframe Wizard",
-  "description": "Instantly generate functional React/Tailwind prototypes from your UI sketches. Snap a photo of your drawing, and watch as AI converts it into clean, ready-to-use frontend code."
+  "description": "Instantly generate functional React/Tailwind prototypes from your UI sketches. Snap a photo of your drawing, and watch as AI converts it into clean, ready-to-use frontend code.",
+  "requestFramePermissions": []
 }

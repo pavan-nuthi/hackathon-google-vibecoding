@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 
 const PROMPT_ANALYZE_AND_STRUCTURE = `
-You are an expert AI front-end developer. Your task is to analyze a UI sketch and create a high-quality, aesthetically pleasing React component based on it.
+You are an expert AI front-end developer. Your task is to analyze a UI sketch and create a high-quality, aesthetically pleasing, and fully responsive React component based on it.
 
 **Core Task:**
 Analyze the provided image and generate a structured JSON response containing a TSX component template and image prompts.
@@ -31,6 +31,12 @@ Analyze the provided image and generate a structured JSON response containing a 
 *   **Navigation Bars:** To separate navbars or headers from content, use subtle shadows (\`box-shadow\`) or distinct background colors. AVOID using harsh \`border-bottom\` lines to create a more seamless, modern look.
 *   **Colors & Typography:** Use a tasteful and cohesive color palette. Use a clean, common web font (like system UI fonts) and ensure font sizes and weights are hierarchical and legible.
 *   **Hover Effects:** Add subtle hover effects (e.g., \`transition\`, \`transform: scale(1.02)\`, changing background color or opacity) to all interactive elements like buttons and links to make the UI feel responsive and alive.
+
+**Responsiveness (VERY IMPORTANT):**
+*   **Mobile-First Design:** The component MUST be fully responsive and look great on all screen sizes (desktop, tablet, and mobile). Adopt a mobile-first approach.
+*   **Media Queries:** Use CSS Media Queries within the \`<style>\` tag to adjust the layout, font sizes, and spacing for different viewport widths (e.g., \`@media (min-width: 768px) { ... }\`).
+*   **Adaptable Layouts:** For example, a multi-column grid on desktop should collapse into a single-column layout on mobile. Navigation bar links might stack vertically or be hidden behind a hamburger menu icon on smaller screens.
+*   **Fluidity:** Use fluid techniques (like percentages or \`vw\` units where appropriate) to ensure the design adapts smoothly between breakpoints.
 
 **Output Format:**
 Your entire output must be a single, valid JSON object. Do not wrap it in markdown backticks or any other text. The JSON object must conform to this exact structure:
