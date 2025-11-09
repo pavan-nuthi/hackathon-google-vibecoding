@@ -57,7 +57,7 @@ const createPreviewHtml = (): string => `
   </body>
   </html>
 `;
-
+// TrashIcon is exported from ./components/Icons — don't redefine it here.
 type Device = 'desktop' | 'tablet' | 'mobile';
 const devices: Record<Device, { width: string; height: string; label: string; }> = {
   desktop: { width: '100%', height: '100%', label: 'Desktop' },
@@ -93,9 +93,9 @@ const ResultViewer = ({ generatedTsx, initialTab = 'preview' }: ResultViewerProp
     }
   }, [isIframeReady, generatedTsx]);
 
-   return (
-      <div className="flex flex-col flex-grow animate-fade-in min-h-0">
-        <div className="flex border-b border-gray-800">
+  return (
+    <div className="flex flex-col flex-grow animate-fade-in min-h-0 h-full">
+      <div className="flex border-b border-gray-800">
           {/* FIX: Use 'as const' to ensure 'tab' is inferred as 'preview' | 'code', not string. */}
           {(['preview', 'code'] as const).map((tab) => (
               <button key={tab} onClick={() => setActiveTab(tab)} className={`py-3 px-5 text-sm font-medium transition-colors ${activeTab === tab ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-gray-400 hover:text-white'}`}>
@@ -104,8 +104,8 @@ const ResultViewer = ({ generatedTsx, initialTab = 'preview' }: ResultViewerProp
           ))}
         </div>
         <div className="bg-gray-900 rounded-b-lg border border-t-0 border-gray-800 flex-1 flex flex-col min-h-0 shadow-lg">
-          {activeTab === 'preview' ? (
-             <div className="flex flex-col flex-grow p-4 min-h-0">
+       {activeTab === 'preview' ? (
+         <div className="flex flex-col flex-grow p-4 min-h-0 h-full">
               <div className="flex justify-center items-center mb-4 p-1.5 bg-gray-800 rounded-lg space-x-1">
                 {(Object.keys(devices) as Device[]).map(device => (
                   <button key={device} onClick={() => setSelectedDevice(device)} className={`p-2 rounded-md transition-colors ${selectedDevice === device ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-700'}`} title={devices[device].label}>
@@ -115,9 +115,16 @@ const ResultViewer = ({ generatedTsx, initialTab = 'preview' }: ResultViewerProp
                   </button>
                 ))}
               </div>
-              <div className={`flex-grow grid overflow-auto bg-dots ${selectedDevice !== 'desktop' ? 'place-items-center' : ''}`}>
+              <div className={`flex-grow grid overflow-auto bg-dots h-full ${selectedDevice !== 'desktop' ? 'place-items-center' : ''}`}>
                 <div className={`shadow-2xl transition-all duration-300 ease-in-out ${selectedDevice !== 'desktop' ? 'rounded-xl' : 'w-full h-full'}`} style={selectedDevice !== 'desktop' ? { width: devices[selectedDevice].width, height: devices[selectedDevice].height, maxWidth: '100%', maxHeight: '100%' } : {}}>
-                  <iframe ref={iframeRef} srcDoc={createPreviewHtml()} title="Live Preview" sandbox="allow-scripts allow-same-origin" className="w-full h-full bg-white" style={{ borderRadius: selectedDevice !== 'desktop' ? '1rem' : '0' }}/>
+                  <iframe
+                    ref={iframeRef}
+                    srcDoc={createPreviewHtml()}
+                    title="Live Preview"
+                    sandbox="allow-scripts allow-same-origin"
+                    className="w-full h-full bg-white block"
+                    style={{ borderRadius: selectedDevice !== 'desktop' ? '1rem' : '0', width: '100%', height: '100%', display: 'block' }}
+                  />
                 </div>
               </div>
               <style>{`.bg-dots { background-image: radial-gradient(#2d3748 1px, transparent 0); background-size: 20px 20px; }`}</style>
@@ -273,9 +280,40 @@ const WizardApp = ({ user, onLogout, onSwitchToProfile }) => {
 
 // --- My Profile Page ---
 const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
-    const { data: snippets = [], isLoading, isError, error } = useGetSnippets();
-    const [selectedWireframe, setSelectedWireframe] = useState(null);
-    const [wireframeToDelete, setWireframeToDelete] = useState(null);
+  const { data: snippets = [], isLoading, isError, error } = useGetSnippets();
+  const [selectedWireframe, setSelectedWireframe] = useState(null);
+  const [wireframeToDelete, setWireframeToDelete] = useState<string | null>(null);
+
+  // Local copy of snippets so we can update UI optimistically when deleting
+  const [wireframes, setWireframes] = useState<any[]>(snippets);
+  useEffect(() => { setWireframes(snippets); }, [snippets]);
+
+  const handleDelete = (e: React.MouseEvent, wireframeId: string) => {
+    e.stopPropagation(); // Prevent card click from firing
+    setWireframeToDelete(wireframeId);
+  };
+
+  const confirmDelete = () => {
+    if (!wireframeToDelete) return;
+
+    // Optimistically update UI
+    const updated = (wireframes || []).filter(w => (w._id || w.id) !== wireframeToDelete);
+    setWireframes(updated);
+
+    // Also remove from localStorage history if present (support both id/_id keys)
+    try {
+      const history = JSON.parse(localStorage.getItem('wireframe-wizard-history') || '{}');
+      if (history[user.email]) {
+        history[user.email] = (history[user.email] || []).filter((w: any) => (w.id || w._id) !== wireframeToDelete);
+        localStorage.setItem('wireframe-wizard-history', JSON.stringify(history));
+      }
+    } catch (err) {
+      // ignore localStorage errors
+    }
+
+    // Close modal
+    setWireframeToDelete(null);
+  };
 
     return (
         <>
@@ -296,7 +334,7 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
                     </div>
                 </div>
             </header>
-            <main className="container mx-auto p-4 md:p-8 flex-grow">
+            <main className="container mx-auto p-4 md:p-8 flex-grow flex flex-col min-h-0">
                 {isLoading ? (
                     <Loader />
                 ) : isError ? (
@@ -304,8 +342,8 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
                         <h2 className="text-2xl font-semibold text-red-400">Failed to load snippets</h2>
                         <p className="text-gray-500 mt-2">{(error as Error)?.message || 'An error occurred while fetching your snippets.'}</p>
                     </div>
-                ) : selectedWireframe ? (
-                    <div className="flex flex-col h-full">
+        ) : selectedWireframe ? (
+          <div className="flex flex-col flex-1 min-h-0">
                         <div className="mb-6 flex items-center justify-between">
                              <div>
                                 <h2 className="text-xl font-bold text-white">Viewing Wireframe</h2>
@@ -319,16 +357,24 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
                     </div>
                 ) : snippets.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                        {snippets.map((snippet) => (
-                            <div key={snippet._id} onClick={() => setSelectedWireframe(snippet)} className="group relative aspect-square bg-gray-900 border border-gray-800 rounded-lg overflow-hidden cursor-pointer transition-all duration-300 hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-500/20 hover:-translate-y-1">
-                                <img src={snippet.thumbnail || 'https://via.placeholder.com/600x600?text=No+Thumbnail'} alt="Wireframe sketch" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                                <div className="absolute bottom-0 left-0 p-4">
-                                    <p className="text-sm font-medium text-white">Created:</p>
-                                    <p className="text-xs text-gray-400">{new Date(snippet.createdAt).toLocaleDateString()}</p>
-                                </div>
-                            </div>
-                        ))}
+                    {(wireframes || []).map((snippet) => (
+                      <div key={snippet._id || snippet.id} onClick={() => setSelectedWireframe(snippet)} className="group relative aspect-square bg-gray-900 border border-gray-800 rounded-lg overflow-hidden cursor-pointer transition-all duration-300 hover:border-indigo-500 hover:shadow-2xl hover:shadow-indigo-500/20 hover:-translate-y-1">
+                        <img src={snippet.thumbnail || 'https://via.placeholder.com/600x600?text=No+Thumbnail'} alt="Wireframe sketch" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+
+                        {/* Delete button (appears on hover) */}
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                          <button onClick={(e) => handleDelete(e, snippet._id || snippet.id)} className="p-2 bg-red-600/80 hover:bg-red-500 rounded-full text-white shadow-lg transition-colors" aria-label="Delete wireframe">
+                            <TrashIcon />
+                          </button>
+                        </div>
+
+                        <div className="absolute bottom-0 left-0 p-4">
+                          <p className="text-sm font-medium text-white">Created:</p>
+                          <p className="text-xs text-gray-400">{new Date(snippet.createdAt).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                    ))}
                     </div>
                 ) : (
                     <div className="text-center my-auto">
@@ -342,8 +388,24 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
                 )}
             </main>
             
-            {/* Delete modal removed; backend deletion not implemented yet */}
-            <style>{`.animate-fade-in-fast { animation: fadeIn 0.2s ease-out; } @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
+      {/* Delete Confirmation Modal */}
+      {wireframeToDelete && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in-fast">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl p-8 max-w-md w-full m-4">
+            <h3 className="text-xl font-bold text-white mb-4">Confirm Deletion</h3>
+            <p className="text-gray-400 mb-8">Are you sure you want to permanently delete this wireframe? This action cannot be undone.</p>
+            <div className="flex justify-end space-x-4">
+              <button onClick={() => setWireframeToDelete(null)} className="px-5 py-2.5 text-sm font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmDelete} className="px-5 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <style>{`.animate-fade-in-fast { animation: fadeIn 0.2s ease-out; } @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
         </>
     );
 };
