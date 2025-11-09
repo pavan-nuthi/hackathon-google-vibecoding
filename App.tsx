@@ -7,7 +7,8 @@ import { DesktopIcon, TabletIcon, MobileIcon, MagicWandIcon, TrashIcon } from '.
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
 import { setAuthToken } from './services/apiClient';
-import { useSaveWireframe, useGetSnippets } from './services/authHooks';
+import { useSaveWireframe, useGetSnippets, useDeleteSnippet } from './services/authHooks';
+import { useQueryClient } from '@tanstack/react-query';
 
 // Creates a complete, self-contained HTML file string that listens for code.
 const createPreviewHtml = (): string => `
@@ -283,6 +284,9 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
   const { data: snippets = [], isLoading, isError, error } = useGetSnippets();
   const [selectedWireframe, setSelectedWireframe] = useState(null);
   const [wireframeToDelete, setWireframeToDelete] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const deleteSnippet = useDeleteSnippet();
 
   // Local copy of snippets so we can update UI optimistically when deleting
   const [wireframes, setWireframes] = useState<any[]>(snippets);
@@ -293,35 +297,39 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
     setWireframeToDelete(wireframeId);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!wireframeToDelete) return;
 
     // Optimistically update UI
-    const updated = (wireframes || []).filter(w => (w._id || w.id) !== wireframeToDelete);
+    const prev = wireframes || [];
+    const updated = prev.filter(w => (w._id || w.id) !== wireframeToDelete);
     setWireframes(updated);
 
-    // Also remove from localStorage history if present (support both id/_id keys)
+    // Attempt API delete
     try {
-      const history = JSON.parse(localStorage.getItem('wireframe-wizard-history') || '{}');
-      if (history[user.email]) {
-        history[user.email] = (history[user.email] || []).filter((w: any) => (w.id || w._id) !== wireframeToDelete);
-        localStorage.setItem('wireframe-wizard-history', JSON.stringify(history));
-      }
+      await deleteSnippet.mutateAsync(wireframeToDelete);
+      // Refresh list from server
+      await queryClient.invalidateQueries({ queryKey: ['snippets'] });
+      setDeleteError(null);
     } catch (err) {
-      // ignore localStorage errors
+      // Revert UI on failure
+      setWireframes(prev);
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setDeleteError(`Failed to delete wireframe: ${message}`);
+    } finally {
+      // Close modal regardless
+      setWireframeToDelete(null);
     }
-
-    // Close modal
-    setWireframeToDelete(null);
   };
 
     return (
         <>
             <header className="py-5 px-4 md:px-8 border-b border-gray-800/50 sticky top-0 bg-gray-950/80 backdrop-blur-sm z-20">
                 <div className="container mx-auto flex justify-between items-center">
-                    <h1 className="text-2xl md:text-3xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-500">
-                        My Profile
-                    </h1>
+                    <div className="flex items-center space-x-2">
+                        <img src={user.profilePic ? user.profilePic : 'https://ui-avatars.com/api/?name=' + user.username} alt="Profile" className="w-8 h-8 rounded-full" />
+                        <span className="text-lg font-bold text-gray-400 truncate max-w-[150px]">{user.username}</span>
+                    </div>
                     <div className="flex items-center space-x-4">
                         <button onClick={onSwitchToApp} className="px-4 py-2 border border-gray-700 text-sm font-medium rounded-md text-gray-300 hover:bg-gray-800 hover:border-gray-600 transition-colors">
                             Back to Wizard
@@ -335,6 +343,9 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
                 </div>
             </header>
             <main className="container mx-auto p-4 md:p-8 flex-grow flex flex-col min-h-0">
+                {deleteError && (
+                    <p className="text-red-400 mb-4 bg-red-900/50 p-3 rounded-md">{deleteError}</p>
+                )}
                 {isLoading ? (
                     <Loader />
                 ) : isError ? (
@@ -399,7 +410,9 @@ const ProfilePage = ({ user, onLogout, onSwitchToApp }) => {
                 Cancel
               </button>
               <button onClick={confirmDelete} className="px-5 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors">
-                Delete
+                {
+                  deleteSnippet.isPending ? 'Deleting...' : 'Delete'
+                }
               </button>
             </div>
           </div>

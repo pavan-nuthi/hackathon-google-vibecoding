@@ -74,3 +74,11 @@ export function useGetSnippets() {
 	});
 }
 
+export function useDeleteSnippet() {
+	return useMutation<void, unknown, string>({
+		mutationKey: ['snippets'],
+		mutationFn: async (id: string) => {
+			await apiClient.delete(`/snippets/${id}`);
+		},
+	});
+}
